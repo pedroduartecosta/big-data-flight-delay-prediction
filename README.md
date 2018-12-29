@@ -1,10 +1,42 @@
 # UPM-BigData-Spark
 Spark application that creates a machine learning model for a real-world problem, using real-world data: Predicting the arrival delay of commercial flights
 
+# How to run
+
+## Install dependencies
+
+#### sbt
+```
+echo "deb https://dl.bintray.com/sbt/debian /" | sudo tee -a /etc/apt/sources.list.d/sbt.list
+sudo apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv 2EE0EA64E40A89B84B2DF73499E82A75642AC823
+sudo apt-get update
+sudo apt-get install sbt
+``` 
+
+#### scala
+```
+$ sudo apt-get install scala
+```
+
+## Download Data-set
+
+Download data data from [here](http://stat-computing.org/dataexpo/2009/the-data.html).
+
+Extract and save data to /flightdelaypreditor/data/
+
+## Run
+```
+$ cd flightdelaypredictor
+
+$ sbt
+
+sbt:regressionTree> run
+
+ ``` 
 
 # Variable descriptions
-n. | Forbidden |  Name |	Description
--- |-- |  ------| -------------
+n.  | Forbidden |  Name |	Description
+--  |-- |  ------| -------------
 1	|	| Year |	1987-2008
 2	|	| Month |	1-12
 3	|	| DayofMonth |	1-31
@@ -28,9 +60,9 @@ n. | Forbidden |  Name |	Description
 21	|	| TaxiOut |	taxi out time in minutes
 22	|	| Cancelled |	was the flight cancelled?
 23	|	| CancellationCode |	reason for cancellation (A = carrier, B = weather, C = NAS, D = security)
-24	|	x | Diverted |	1 = yes, 0 = no
-25	|	x | CarrierDelay |	in minutes
-26	|	x | WeatherDelay |	in minutes
-27	|	x | NASDelay |	in minutes
-28	|	x | SecurityDelay |	in minutes
-29	|	x | LateAircraftDelay |	in minutes
+24	| x | Diverted |	1 = yes, 0 = no
+25	| x | CarrierDelay |	in minutes
+26	| x | WeatherDelay |	in minutes
+27	| x | NASDelay |	in minutes
+28	| x | SecurityDelay |	in minutes
+29	| x | LateAircraftDelay |	in minutes
