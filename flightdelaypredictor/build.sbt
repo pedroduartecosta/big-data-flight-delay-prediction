@@ -7,7 +7,7 @@ lazy val root = (project in file(".")).
       scalaVersion := "2.12.5",
       version      := "0.1.0-SNAPSHOT"
     )),
-    name := "regressionTree",
+    name := "flightDelayPredictor",
     libraryDependencies += sparkCore,
     libraryDependencies += sparkSQL,
     libraryDependencies += sparkMLlib

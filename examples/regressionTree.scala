@@ -21,7 +21,7 @@ object App {
     val sc = new SparkContext(conf)
 
     // Load and parse the data file.
-    val data = MLUtils.loadLibSVMFile(sc, "/home/proton/Documents/UPM-BigData-Spark/FlightDelayPredictor/data/housing.txt")
+    val data = MLUtils.loadLibSVMFile(sc, "/home/proton/Documents/UPM-BigData-Spark/flightdelaypredictor/data/2008.csv")
     // Split the data into training and test sets (30% held out for testing)
     val splits = data.randomSplit(Array(0.7, 0.3))
     val (trainingData, testData) = (splits(0), splits(1))
