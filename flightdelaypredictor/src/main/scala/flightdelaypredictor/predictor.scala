@@ -19,29 +19,30 @@ object Flight {
       dayOfWeeK: Integer,
       depTime: Integer,
       crsDepTime: Integer,
-      arrTime: Integer,
+      arrTime: Integer,           //forbidden
       cRSArrTime: Integer,
       uniqueCarrier: String,
       flightNum: Integer,
       tailNum: String,
-      actualElapsedTime: Integer,
+      actualElapsedTime: Integer, //forbidden
       cRSElapsedTime: Integer,
-      airTime: Integer,
+      airTime: Integer,           //forbidden
       arrDelay: Double,
       depDelay: Double,
       origin: String,
       dest: String,
       distance: Double,
-      taxiIn: Integer,
+      taxiIn: Integer,            //forbidden
       taxiOut: Integer,
       cancelled: Integer,
       cancellationCode: Integer,
-      diverted: Integer,
+      diverted: Integer,          //forbidden
       carrierDelay: Integer,
-      weatherDelay: Integer,
-      nASDelay: Integer,
-      securityDelay: Integer,
-      lateAircraftDelay: Integer)
+      weatherDelay: Integer,      //forbidden
+      nASDelay: Integer,          //forbidden
+      securityDelay: Integer,     //forbidden
+      lateAircraftDelay: Integer  //forbidden
+    ) 
     extends Serializable
 
   val schema = StructType(Array(
@@ -82,10 +83,29 @@ object Flight {
 
     import spark.implicits._
 
-    val dfUncleaned = spark.read.format("com.databricks.spark.csv").schema(schema).option("header", "true").option("treatEmptyValuesAsNulls", "true").load("/home/proton/Documents/UPM-BigData-Spark/flightdelaypredictor/data/2008.csv")
-    dfUncleaned.take(10)
     
-    println("dfUncleaned :" + dfUncleaned.count())
+
+    // Read raw data from csv file
+    //.option("treatEmptyValuesAsNulls", "true") - may be useful
+    val dfUncleaned = spark.read.format("com.databricks.spark.csv").schema(schema).option("header", "true").load("/home/proton/Documents/UPM-BigData-Spark/flightdelaypredictor/data/2008.csv")
+    
+    // Cleaning the dataset from forbidden variables
+    val ds = dfUncleaned
+              .drop("actualElapsedTime")
+              .drop("arrTime")
+              .drop("airTime")
+              .drop("taxiIn")
+              .drop("diverted")
+              .drop("weatherDelay")
+              .drop("nASDelay")
+              .drop("securityDelay")
+              .drop("lateAircraftDelay")
+    
+    val first10 = ds.take(10)
+
+    for (v <- first10) println(v)
+
+    println("dataset :" + ds.count())
     
     spark.stop()
   }
