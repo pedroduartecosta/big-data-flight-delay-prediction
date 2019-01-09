@@ -8,6 +8,7 @@ lazy val root = (project in file(".")).
       version      := "0.1.0-SNAPSHOT"
     )),
     name := "flightDelayPredictor",
+    fork in run := true,
     libraryDependencies += sparkCore,
     libraryDependencies += sparkSQL,
     libraryDependencies += sparkMLlib
