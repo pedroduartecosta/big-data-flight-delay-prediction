@@ -1,49 +1,18 @@
 package FlightDelayPredictor
 
 import org.apache.spark._
-import org.apache.spark.ml._
-import org.apache.spark.ml.feature._
-import org.apache.spark.ml.classification._
-import org.apache.spark.ml.evaluation._
-import org.apache.spark.ml.tuning._
-import org.apache.spark.sql._
-import org.apache.spark.sql.functions._
+import org.apache.spark.sql.SQLContext
+import org.apache.spark.ml.feature.{StringIndexer, VectorAssembler, OneHotEncoder}
+import org.apache.spark.ml.tuning.{ParamGridBuilder, TrainValidationSplit}
+import org.apache.spark.ml.evaluation.{RegressionEvaluator}
+import org.apache.spark.ml.regression.{LinearRegression}
+import org.apache.spark.ml.Pipeline
+import org.apache.spark.mllib.evaluation.RegressionMetrics
+import org.apache.spark.sql.functions.col
 import org.apache.spark.sql.types._
 
-object Flight {
 
-  case class Flight(
-      year: Integer,
-      month: Integer,
-      dayofMonth: Integer,
-      dayOfWeeK: Integer,
-      depTime: Integer,
-      crsDepTime: Integer,
-      arrTime: Integer,           //forbidden
-      cRSArrTime: Integer,
-      uniqueCarrier: String,
-      flightNum: Integer,
-      tailNum: String,
-      actualElapsedTime: Integer, //forbidden
-      cRSElapsedTime: Integer,
-      airTime: Integer,           //forbidden
-      arrDelay: Double,
-      depDelay: Double,
-      origin: String,
-      dest: String,
-      distance: Double,
-      taxiIn: Integer,            //forbidden
-      taxiOut: Integer,
-      cancelled: Integer,
-      cancellationCode: Integer,
-      diverted: Integer,          //forbidden
-      carrierDelay: Integer,
-      weatherDelay: Integer,      //forbidden
-      nASDelay: Integer,          //forbidden
-      securityDelay: Integer,     //forbidden
-      lateAircraftDelay: Integer  //forbidden
-    ) 
-    extends Serializable
+object Flight {
 
   val schema = StructType(Array(
     StructField("year", IntegerType, true),
@@ -69,44 +38,46 @@ object Flight {
     StructField("taxiOut", IntegerType, true),
     StructField("cancelled", IntegerType, true),
     StructField("cancellationCode", IntegerType, true),
-    StructField("diverted", IntegerType, true),
-    StructField("carrierDelay", IntegerType, true),
-    StructField("weatherDelay", IntegerType, true),
-    StructField("nASDelay", IntegerType, true),
-    StructField("securityDelay", IntegerType, true),
-    StructField("lateAircraftDelay", IntegerType, true)
+    StructField("diverted", StringType, true),
+    StructField("carrierDelay", StringType, true),
+    StructField("weatherDelay", StringType, true),
+    StructField("nASDelay", StringType, true),
+    StructField("securityDelay", StringType, true),
+    StructField("lateAircraftDelay", StringType, true)
   ))
 
   def main(args: Array[String]) {
 
-    val spark: SparkSession = SparkSession.builder().appName("predictor").config("spark.master", "local").getOrCreate()
+    val dataPath = "/home/proton/Documents/UPM-BigData-Spark/flightdelaypredictor/data/2008short.csv"
+    
+    val conf = new SparkConf().setAppName("predictor").setMaster("local")
+    val sc = new SparkContext(conf)
+    val sqlContext = new SQLContext(sc)
 
-    import spark.implicits._
+    val rawData = sqlContext.read.format("com.databricks.spark.csv")
+                .option("header", "true")
+                .option("inferSchema", "false")
+                .schema(schema)
+                .load(dataPath)
+                .withColumn("delayOutputVar", col("ArrDelay").cast("double"))
+                .cache()
+
+    val data = rawData.drop("actualElapsedTime")
+                .drop("arrTime")
+                .drop("airTime")
+                .drop("taxiIn")
+                .drop("diverted")
+                .drop("weatherDelay")
+                .drop("nASDelay")
+                .drop("securityDelay")
+                .drop("lateAircraftDelay")
+
+    val categoricalVariables = Array("uniqueCarrier", "tailNum", "origin", "dest")
+    val categoricalIndexers = categoricalVariables
+      .map(i => new StringIndexer().setInputCol(i).setOutputCol(i+"Index"))
+    val categoricalEncoders = categoricalVariables
+      .map(e => new OneHotEncoder().setInputCol(e + "Index").setOutputCol(e + "Vec"))
 
     
-
-    // Read raw data from csv file
-    //.option("treatEmptyValuesAsNulls", "true") - may be useful
-    val dfUncleaned = spark.read.format("com.databricks.spark.csv").schema(schema).option("header", "true").load("/home/proton/Documents/UPM-BigData-Spark/flightdelaypredictor/data/2008.csv")
-    
-    // Cleaning the dataset from forbidden variables
-    val ds = dfUncleaned
-              .drop("actualElapsedTime")
-              .drop("arrTime")
-              .drop("airTime")
-              .drop("taxiIn")
-              .drop("diverted")
-              .drop("weatherDelay")
-              .drop("nASDelay")
-              .drop("securityDelay")
-              .drop("lateAircraftDelay")
-    
-    val first10 = ds.take(10)
-
-    for (v <- first10) println(v)
-
-    println("dataset :" + ds.count())
-    
-    spark.stop()
   }
 }
