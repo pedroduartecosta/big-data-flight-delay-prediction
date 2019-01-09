@@ -57,6 +57,7 @@ object Flight {
     val rawData = sqlContext.read.format("com.databricks.spark.csv")
                 .option("header", "true")
                 .option("inferSchema", "false")
+                .option("treatEmptyValuesAsNulls", "true")
                 .schema(schema)
                 .load(dataPath)
                 .withColumn("delayOutputVar", col("ArrDelay").cast("double"))
@@ -74,7 +75,8 @@ object Flight {
                 .drop("securityDelay")
                 .drop("lateAircraftDelay")
                 .drop("uniqueCarrier")
-    
+                .drop("cancellationCode")
+
     // remove cancelled flights
     val data = data2.filter(col("Cancelled") > 0)
 
@@ -82,7 +84,7 @@ object Flight {
     val categoricalIndexers = categoricalVariables
       .map(i => new StringIndexer().setInputCol(i).setOutputCol(i+"Index"))
     val categoricalEncoders = categoricalVariables
-      .map(e => new OneHotEncoder().setInputCol(e + "Index").setOutputCol(e + "Vec"))
+      .map(e => new OneHotEncoder().setInputCol(e + "Index").setOutputCol(e + "Vec").setDropLast(false))
 
     // assemble all of our features into one vector which we will call "features". 
     // This will house all variables that will be input into our model.
@@ -113,7 +115,6 @@ object Flight {
     val Array(training, test) = data.randomSplit(Array(0.70, 0.30), seed = 12345)
 
     val model = tvs.fit(training)
-
 
     val holdout = model.transform(test).select("prediction", "delayOutputVar")
 
