@@ -15,29 +15,29 @@ import org.apache.spark.sql.types._
 object Flight {
 
   val schema = StructType(Array(
-    StructField("year", IntegerType, true),
-    StructField("month", IntegerType, true),
-    StructField("dayofMonth", IntegerType, true),
-    StructField("dayOfWeeK", IntegerType, true),
-    StructField("depTime", IntegerType, true),
-    StructField("crsDepTime", IntegerType, true),
-    StructField("arrTime", IntegerType, true),
-    StructField("cRSArrTime", IntegerType, true),
+    StructField("year", DoubleType, true),
+    StructField("month", DoubleType, true),
+    StructField("dayofMonth", DoubleType, true),
+    StructField("dayOfWeeK", DoubleType, true),
+    StructField("depTime", DoubleType, true),
+    StructField("crsDepTime", DoubleType, true),
+    StructField("arrTime", DoubleType, true),
+    StructField("cRSArrTime", DoubleType, true),
     StructField("uniqueCarrier", StringType, true),
-    StructField("flightNum", IntegerType, true),
+    StructField("flightNum", DoubleType, true),
     StructField("tailNum", StringType, true),
-    StructField("actualElapsedTime", IntegerType, true),
-    StructField("cRSElapsedTime", IntegerType, true),
-    StructField("airTime", IntegerType, true),
+    StructField("actualElapsedTime", DoubleType, true),
+    StructField("cRSElapsedTime", DoubleType, true),
+    StructField("airTime", DoubleType, true),
     StructField("arrDelay", DoubleType, true),
     StructField("depDelay", DoubleType, true),
     StructField("origin", StringType, true),
     StructField("dest", StringType, true),
     StructField("distance", DoubleType, true),
-    StructField("taxiIn", IntegerType, true),
-    StructField("taxiOut", IntegerType, true),
-    StructField("cancelled", IntegerType, true),
-    StructField("cancellationCode", IntegerType, true),
+    StructField("taxiIn", DoubleType, true),
+    StructField("taxiOut", DoubleType, true),
+    StructField("cancelled", DoubleType, true),
+    StructField("cancellationCode", DoubleType, true),
     StructField("diverted", StringType, true),
     StructField("carrierDelay", StringType, true),
     StructField("weatherDelay", StringType, true),
@@ -62,7 +62,9 @@ object Flight {
                 .withColumn("delayOutputVar", col("ArrDelay").cast("double"))
                 .cache()
 
-    val data = rawData.drop("actualElapsedTime")
+    // remove forbidden variables
+    val data2 = rawData
+                .drop("actualElapsedTime")
                 .drop("arrTime")
                 .drop("airTime")
                 .drop("taxiIn")
@@ -71,13 +73,60 @@ object Flight {
                 .drop("nASDelay")
                 .drop("securityDelay")
                 .drop("lateAircraftDelay")
+                .drop("uniqueCarrier")
+    
+    // remove cancelled flights
+    val data = data2.filter(col("Cancelled") > 0)
 
-    val categoricalVariables = Array("uniqueCarrier", "tailNum", "origin", "dest")
+    val categoricalVariables = Array("tailNum", "origin", "dest")
     val categoricalIndexers = categoricalVariables
       .map(i => new StringIndexer().setInputCol(i).setOutputCol(i+"Index"))
     val categoricalEncoders = categoricalVariables
       .map(e => new OneHotEncoder().setInputCol(e + "Index").setOutputCol(e + "Vec"))
 
-    
+    // assemble all of our features into one vector which we will call "features". 
+    // This will house all variables that will be input into our model.
+    val assembler = new VectorAssembler()
+                    .setInputCols(Array("tailNumVec", "originVec", "destVec", "year", "month", "dayofMonth", "dayOfWeeK", "depTime", "crsDepTime", "cRSArrTime", "flightNum", "cRSElapsedTime", "depDelay", "distance", "taxiOut"))
+                    .setOutputCol("features")
+
+
+    val lr = new LinearRegression()
+      .setLabelCol("delayOutputVar")
+      .setFeaturesCol("features")
+
+    val paramGrid = new ParamGridBuilder()
+      .addGrid(lr.regParam, Array(0.1, 0.01))
+      .addGrid(lr.fitIntercept)
+      .addGrid(lr.elasticNetParam, Array(0.0, 1.0))
+      .build()
+
+    val steps: Array[org.apache.spark.ml.PipelineStage] = categoricalIndexers ++ categoricalEncoders ++ Array(assembler, lr)
+    val pipeline = new Pipeline().setStages(steps)
+
+    val tvs = new TrainValidationSplit()
+      .setEstimator(pipeline) // the estimator can also just be an individual model rather than a pipeline
+      .setEvaluator(new RegressionEvaluator().setLabelCol("delayOutputVar"))
+      .setEstimatorParamMaps(paramGrid)
+      .setTrainRatio(0.7)
+
+    val Array(training, test) = data.randomSplit(Array(0.70, 0.30), seed = 12345)
+
+    val model = tvs.fit(training)
+
+
+    val holdout = model.transform(test).select("prediction", "delayOutputVar")
+
+    // have to do a type conversion for RegressionMetrics
+    val rm = new RegressionMetrics(holdout.rdd.map(x =>
+      (x(0).asInstanceOf[Double], x(1).asInstanceOf[Double])))
+
+    println("sqrt(MSE): " + Math.sqrt(rm.meanSquaredError))
+    println("R Squared: " + rm.r2)
+    println("Explained Variance: " + rm.explainedVariance + "\n")
+
+
+    sc.stop()
+
   }
 }
