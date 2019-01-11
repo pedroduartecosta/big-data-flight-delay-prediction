@@ -14,41 +14,9 @@ import org.apache.spark.sql.types._
 
 object Flight {
 
-  val schema = StructType(Array(
-    StructField("year", DoubleType, true),
-    StructField("month", DoubleType, true),
-    StructField("dayofMonth", DoubleType, true),
-    StructField("dayOfWeeK", DoubleType, true),
-    StructField("depTime", DoubleType, true),
-    StructField("crsDepTime", DoubleType, true),
-    StructField("arrTime", DoubleType, true),
-    StructField("cRSArrTime", DoubleType, true),
-    StructField("uniqueCarrier", StringType, true),
-    StructField("flightNum", DoubleType, true),
-    StructField("tailNum", StringType, true),
-    StructField("actualElapsedTime", DoubleType, true),
-    StructField("cRSElapsedTime", DoubleType, true),
-    StructField("airTime", DoubleType, true),
-    StructField("arrDelay", DoubleType, true),
-    StructField("depDelay", DoubleType, true),
-    StructField("origin", StringType, true),
-    StructField("dest", StringType, true),
-    StructField("distance", DoubleType, true),
-    StructField("taxiIn", DoubleType, true),
-    StructField("taxiOut", DoubleType, true),
-    StructField("cancelled", DoubleType, true),
-    StructField("cancellationCode", DoubleType, true),
-    StructField("diverted", StringType, true),
-    StructField("carrierDelay", StringType, true),
-    StructField("weatherDelay", StringType, true),
-    StructField("nASDelay", StringType, true),
-    StructField("securityDelay", StringType, true),
-    StructField("lateAircraftDelay", StringType, true)
-  ))
-
   def main(args: Array[String]) {
 
-    val dataPath = "/home/proton/Documents/UPM-BigData-Spark/flightdelaypredictor/data/2008short.csv"
+    val dataPath = "/home/proton/Documents/UPM-BigData-Spark/flightdelaypredictor/data/2008.csv"
     
     val conf = new SparkConf().setAppName("predictor").setMaster("local")
     val sc = new SparkContext(conf)
@@ -56,45 +24,56 @@ object Flight {
 
     val rawData = sqlContext.read.format("com.databricks.spark.csv")
                 .option("header", "true")
-                .option("inferSchema", "false")
-                .option("treatEmptyValuesAsNulls", "true")
-                .schema(schema)
+                .option("inferSchema", "true")
                 .load(dataPath)
-                .withColumn("delayOutputVar", col("ArrDelay").cast("double"))
+                .withColumn("DelayOutputVar", col("ArrDelay").cast("double"))
+                .withColumn("DepTimeDouble", col("DepTime").cast("double"))
+                .withColumn("CRSElapsedTimeDouble", col("CRSElapsedTime").cast("double"))
+                .withColumn("DepDelayDouble", col("DepDelay").cast("double"))
+                .withColumn("TaxiOutDouble", col("TaxiOut").cast("double"))
                 .cache()
 
     // remove forbidden variables
     val data2 = rawData
-                .drop("actualElapsedTime")
-                .drop("arrTime")
-                .drop("airTime")
-                .drop("taxiIn")
-                .drop("diverted")
-                .drop("weatherDelay")
-                .drop("nASDelay")
-                .drop("securityDelay")
-                .drop("lateAircraftDelay")
-                .drop("uniqueCarrier")
-                .drop("cancellationCode")
+                .limit(1000000)
+                .drop("ActualElapsedTime")
+                .drop("ArrTime")
+                .drop("AirTime")
+                .drop("TaxiIn")
+                .drop("Diverted")
+                .drop("CarrierDelay")
+                .drop("WeatherDelay")
+                .drop("NASDelay")
+                .drop("SecurityDelay")
+                .drop("LateAircraftDelay")
+                .drop("UniqueCarrier")
+                .drop("CancellationCode")
+                .drop("DepTime")
+                .drop("CRSElapsedTime")
+                .drop("DepDelay")
+                .drop("TaxiOut")
 
     // remove cancelled flights
-    val data = data2.filter(col("Cancelled") > 0)
+    val data = data2.filter("DelayOutputVar is not null")
 
-    val categoricalVariables = Array("tailNum", "origin", "dest")
+    println(data)
+    
+    val categoricalVariables = Array("TailNum", "Origin", "Dest")
     val categoricalIndexers = categoricalVariables
-      .map(i => new StringIndexer().setInputCol(i).setOutputCol(i+"Index"))
+      .map(i => new StringIndexer().setInputCol(i).setOutputCol(i+"Index").setHandleInvalid("skip"))
     val categoricalEncoders = categoricalVariables
       .map(e => new OneHotEncoder().setInputCol(e + "Index").setOutputCol(e + "Vec").setDropLast(false))
 
     // assemble all of our features into one vector which we will call "features". 
     // This will house all variables that will be input into our model.
     val assembler = new VectorAssembler()
-                    .setInputCols(Array("tailNumVec", "originVec", "destVec", "year", "month", "dayofMonth", "dayOfWeeK", "depTime", "crsDepTime", "cRSArrTime", "flightNum", "cRSElapsedTime", "depDelay", "distance", "taxiOut"))
+                    .setInputCols(Array("TailNumVec", "OriginVec", "DestVec", "Year", "Month", "DayofMonth", "DayOfWeek", "DepTimeDouble", "CRSDepTime", "CRSArrTime", "FlightNum", "CRSElapsedTimeDouble", "DepDelayDouble", "Distance", "TaxiOutDouble"))
                     .setOutputCol("features")
+                    .setHandleInvalid("skip")
 
 
     val lr = new LinearRegression()
-      .setLabelCol("delayOutputVar")
+      .setLabelCol("DelayOutputVar")
       .setFeaturesCol("features")
 
     val paramGrid = new ParamGridBuilder()
@@ -108,7 +87,7 @@ object Flight {
 
     val tvs = new TrainValidationSplit()
       .setEstimator(pipeline) // the estimator can also just be an individual model rather than a pipeline
-      .setEvaluator(new RegressionEvaluator().setLabelCol("delayOutputVar"))
+      .setEvaluator(new RegressionEvaluator().setLabelCol("DelayOutputVar"))
       .setEstimatorParamMaps(paramGrid)
       .setTrainRatio(0.7)
 
@@ -116,15 +95,19 @@ object Flight {
 
     val model = tvs.fit(training)
 
-    val holdout = model.transform(test).select("prediction", "delayOutputVar")
+    val holdout = model.transform(test).select("prediction", "DelayOutputVar")
+
+    println("holdout")
+    println(holdout)
 
     // have to do a type conversion for RegressionMetrics
     val rm = new RegressionMetrics(holdout.rdd.map(x =>
       (x(0).asInstanceOf[Double], x(1).asInstanceOf[Double])))
 
-    println("sqrt(MSE): " + Math.sqrt(rm.meanSquaredError))
-    println("R Squared: " + rm.r2)
-    println("Explained Variance: " + rm.explainedVariance + "\n")
+    println("sqrt(MSE): " + Math.sqrt(rm.meanSquaredError)) // 9.27208480408947
+    println("mean absolute error: " + 	rm.meanAbsoluteError)
+    println("R Squared: " + rm.r2)                          // 0.9418762043860976
+    println("Explained Variance: " + rm.explainedVariance + "\n") //1391.913765231291
 
 
     sc.stop()
