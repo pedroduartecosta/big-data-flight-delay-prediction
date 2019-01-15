@@ -11,12 +11,22 @@ import org.apache.spark.mllib.evaluation.RegressionMetrics
 import org.apache.spark.sql.functions.col
 import org.apache.spark.sql.types._
 
+import scala.io._
+
+import breeze.linalg._
+import breeze.numerics._
+import breeze.plot._
 
 object Flight {
 
   def main(args: Array[String]) {
+    print("UPM Big Data Spark project by\n")
+    print("Carolina Neves\nPedro Costa\n\n")
+    print("Where is your dataset located? (provide full path on disk) \n")
 
-    val dataPath = "/home/proton/Documents/UPM-BigData-Spark/flightdelaypredictor/data/2008.csv"
+    //val dataPath = readLine()
+
+    val dataPath = "/home/proton/Documents/UPM-BigData-Spark/flightdelaypredictor/data/2008short.csv"
     
     val conf = new SparkConf().setAppName("predictor").setMaster("local")
     val sc = new SparkContext(conf)
@@ -35,7 +45,6 @@ object Flight {
 
     // remove forbidden variables
     val data2 = rawData
-                .limit(1000000)
                 .drop("ActualElapsedTime")
                 .drop("ArrTime")
                 .drop("AirTime")
@@ -56,7 +65,18 @@ object Flight {
     // remove cancelled flights
     val data = data2.filter("DelayOutputVar is not null")
 
-    println(data)
+    val fligh_delays = DenseVector(Source.fromFile(dataPath).getLines.drop(1).filter(x => x == "NA").map(_.split(",")(14).toDouble).toSeq :_ * )
+    val number_of_flights = DenseVector.range(0,fligh_delays.length, 1).map( _.toDouble)
+
+
+    println(":::::::::::::::::::::::::::")
+    println(fligh_delays)
+
+    val fig = Figure()
+    val plt = fig.subplot(0)
+    plt += plot(number_of_flights, fligh_delays)
+    fig.refresh()
+
     
     val categoricalVariables = Array("TailNum", "Origin", "Dest")
     val categoricalIndexers = categoricalVariables
@@ -96,9 +116,6 @@ object Flight {
     val model = tvs.fit(training)
 
     val holdout = model.transform(test).select("prediction", "DelayOutputVar")
-
-    println("holdout")
-    println(holdout)
 
     // have to do a type conversion for RegressionMetrics
     val rm = new RegressionMetrics(holdout.rdd.map(x =>

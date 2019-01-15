@@ -8,8 +8,14 @@ lazy val root = (project in file(".")).
       version      := "0.1.0-SNAPSHOT"
     )),
     name := "flightDelayPredictor",
+    resolvers += "Sonatype Releases" at "https://oss.sonatype.org/content/repositories/releases/",
     fork in run := true,
+    connectInput in run := true,
     libraryDependencies += sparkCore,
     libraryDependencies += sparkSQL,
-    libraryDependencies += sparkMLlib
+    libraryDependencies += sparkMLlib,
+    libraryDependencies += breeze,
+    libraryDependencies += breezeNatives,
+    libraryDependencies += breezeViz
+
   )
