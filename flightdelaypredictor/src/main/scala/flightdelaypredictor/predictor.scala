@@ -13,10 +13,6 @@ import org.apache.spark.sql.types._
 
 import scala.io._
 
-import breeze.linalg._
-import breeze.numerics._
-import breeze.plot._
-
 object Flight {
 
   def main(args: Array[String]) {
@@ -24,9 +20,9 @@ object Flight {
     print("Carolina Neves\nPedro Costa\n\n")
     print("Where is your dataset located? (provide full path on disk) \n")
 
-    //val dataPath = readLine()
+    val dataPath = readLine()
 
-    val dataPath = "/home/proton/Documents/UPM-BigData-Spark/flightdelaypredictor/data/2008short.csv"
+    //val dataPath = "/home/proton/Documents/UPM-BigData-Spark/flightdelaypredictor/data/2008.csv"
     
     val conf = new SparkConf().setAppName("predictor").setMaster("local")
     val sc = new SparkContext(conf)
@@ -37,45 +33,46 @@ object Flight {
                 .option("inferSchema", "true")
                 .load(dataPath)
                 .withColumn("DelayOutputVar", col("ArrDelay").cast("double"))
-                .withColumn("DepTimeDouble", col("DepTime").cast("double"))
-                .withColumn("CRSElapsedTimeDouble", col("CRSElapsedTime").cast("double"))
                 .withColumn("DepDelayDouble", col("DepDelay").cast("double"))
                 .withColumn("TaxiOutDouble", col("TaxiOut").cast("double"))
                 .cache()
 
     // remove forbidden variables
     val data2 = rawData
-                .drop("ActualElapsedTime")
-                .drop("ArrTime")
-                .drop("AirTime")
-                .drop("TaxiIn")
-                .drop("Diverted")
-                .drop("CarrierDelay")
-                .drop("WeatherDelay")
-                .drop("NASDelay")
-                .drop("SecurityDelay")
-                .drop("LateAircraftDelay")
-                .drop("UniqueCarrier")
-                .drop("CancellationCode")
-                .drop("DepTime")
-                .drop("CRSElapsedTime")
-                .drop("DepDelay")
-                .drop("TaxiOut")
+                .drop("ActualElapsedTime") // Forbidden
+                .drop("ArrTime") // Forbidden
+                .drop("AirTime") // Forbidden
+                .drop("TaxiIn") // Forbidden
+                .drop("Diverted") // Forbidden
+                .drop("CarrierDelay") // Forbidden
+                .drop("WeatherDelay") // Forbidden
+                .drop("NASDelay") // Forbidden
+                .drop("SecurityDelay") // Forbidden
+                .drop("LateAircraftDelay") // Forbidden
+                .drop("DepDelay") // Casted to double in a new variable called DepDelayDouble
+                .drop("TaxiOut") // Casted to double in a new variable called TaxiOutDouble
 
     // remove cancelled flights
-    val data = data2.filter("DelayOutputVar is not null")
+    val data3 = data2.filter("DelayOutputVar is not null")
 
-    val fligh_delays = DenseVector(Source.fromFile(dataPath).getLines.drop(1).filter(x => x == "NA").map(_.split(",")(14).toDouble).toSeq :_ * )
-    val number_of_flights = DenseVector.range(0,fligh_delays.length, 1).map( _.toDouble)
+    // Remove correlated variables
+    val data4 = data3
+                .drop("UniqueCarrier") // Always the same value
+                .drop("CancellationCode") // Cancelled flights don't count
+                .drop("DepTime") // Highly correlated to CRSDeptime
+                .drop("CRSArrTime") // Highly correlated to CRSDeptime
+                .drop("CRSElapsedTime") // Highly correlated to Distance
 
-
-    println(":::::::::::::::::::::::::::")
-    println(fligh_delays)
-
-    val fig = Figure()
-    val plt = fig.subplot(0)
-    plt += plot(number_of_flights, fligh_delays)
-    fig.refresh()
+    // Remove uncorrelated variables to the lable arrDelay
+    val data = data4
+                .drop("Distance")
+                .drop("FlightNum")
+                .drop("CRSDepTime")
+                .drop("Year")
+                .drop("Month")
+                .drop("DayofMonth")
+                .drop("DayOfWeek")
+    
 
     
     val categoricalVariables = Array("TailNum", "Origin", "Dest")
@@ -87,7 +84,7 @@ object Flight {
     // assemble all of our features into one vector which we will call "features". 
     // This will house all variables that will be input into our model.
     val assembler = new VectorAssembler()
-                    .setInputCols(Array("TailNumVec", "OriginVec", "DestVec", "Year", "Month", "DayofMonth", "DayOfWeek", "DepTimeDouble", "CRSDepTime", "CRSArrTime", "FlightNum", "CRSElapsedTimeDouble", "DepDelayDouble", "Distance", "TaxiOutDouble"))
+                    .setInputCols(Array("TailNumVec", "OriginVec", "DestVec", "DepDelayDouble", "TaxiOutDouble"))
                     .setOutputCol("features")
                     .setHandleInvalid("skip")
 
