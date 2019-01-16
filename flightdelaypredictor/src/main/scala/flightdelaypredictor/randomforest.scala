@@ -5,7 +5,7 @@ import org.apache.spark.sql.SQLContext
 import org.apache.spark.ml.feature.{StringIndexer, VectorAssembler, OneHotEncoder}
 import org.apache.spark.ml.tuning.{ParamGridBuilder, TrainValidationSplit}
 import org.apache.spark.ml.evaluation.{RegressionEvaluator}
-import org.apache.spark.ml.regression.{LinearRegression}
+import org.apache.spark.ml.regression.{LinearRegression, RandomForestRegressionModel, RandomForestRegressor}
 import org.apache.spark.ml.Pipeline
 import org.apache.spark.mllib.evaluation.RegressionMetrics
 import org.apache.spark.sql.functions.col
@@ -13,7 +13,7 @@ import org.apache.spark.sql.types._
 
 import scala.io._
 
-object Flight {
+object RandomForest {
 
   def main(args: Array[String]) {
     print("UPM Big Data Spark project by\n")
@@ -53,25 +53,25 @@ object Flight {
                 .drop("TaxiOut") // Casted to double in a new variable called TaxiOutDouble
 
     // remove cancelled flights
-    val data = data2.filter("DelayOutputVar is not null")
+    val data3 = data2.filter("DelayOutputVar is not null")
 
     // Remove correlated variables
-    // val data = data3
-    //             .drop("UniqueCarrier") // Always the same value
-    //             .drop("CancellationCode") // Cancelled flights don't count
-    //             .drop("DepTime") // Highly correlated to CRSDeptime
-    //             .drop("CRSArrTime") // Highly correlated to CRSDeptime
-    //             .drop("CRSElapsedTime") // Highly correlated to Distance
+    val data4 = data3
+                .drop("UniqueCarrier") // Always the same value
+                .drop("CancellationCode") // Cancelled flights don't count
+                .drop("DepTime") // Highly correlated to CRSDeptime
+                .drop("CRSArrTime") // Highly correlated to CRSDeptime
+                .drop("CRSElapsedTime") // Highly correlated to Distance
 
     // Remove uncorrelated variables to the lable arrDelay
-    // val data = data4
-    //             .drop("Distance")
-    //             .drop("FlightNum")
-    //             .drop("CRSDepTime")
-    //             .drop("Year")
-    //             .drop("Month")
-    //             .drop("DayofMonth")
-    //             .drop("DayOfWeek")
+    val data = data4
+                .drop("Distance")
+                .drop("FlightNum")
+                .drop("CRSDepTime")
+                .drop("Year")
+                .drop("Month")
+                .drop("DayofMonth")
+                .drop("DayOfWeek")
     
 
     
@@ -84,22 +84,19 @@ object Flight {
     // assemble all of our features into one vector which we will call "features". 
     // This will house all variables that will be input into our model.
     val assembler = new VectorAssembler()
-                    .setInputCols(Array("TailNumVec", "OriginVec", "DestVec", "DepDelayDouble", "TaxiOutDouble", "Distance", "FlightNum", "CRSDepTime", "Year", "Month", "DayofMonth", "DayOfWeek" ))
+                    .setInputCols(Array("TailNumVec", "OriginVec", "DestVec", "DepDelayDouble", "TaxiOutDouble"))
                     .setOutputCol("features")
                     .setHandleInvalid("skip")
 
 
-    val lr = new LinearRegression()
-      .setLabelCol("DelayOutputVar")
-      .setFeaturesCol("features")
+    // Train a RandomForest model.
+    val rf = new RandomForestRegressor()
+        .setLabelCol("DelayOutputVar")
+        .setFeaturesCol("features")
 
-    val paramGrid = new ParamGridBuilder()
-      .addGrid(lr.regParam, Array(0.1, 0.01))
-      .addGrid(lr.fitIntercept)
-      .addGrid(lr.elasticNetParam, Array(0.0, 1.0))
-      .build()
+    val paramGrid = new ParamGridBuilder().build()
 
-    val steps: Array[org.apache.spark.ml.PipelineStage] = categoricalIndexers ++ categoricalEncoders ++ Array(assembler, lr)
+    val steps: Array[org.apache.spark.ml.PipelineStage] = categoricalIndexers ++ categoricalEncoders ++ Array(assembler, rf)
     val pipeline = new Pipeline().setStages(steps)
 
     val tvs = new TrainValidationSplit()
@@ -122,26 +119,6 @@ object Flight {
     println("mean absolute error: " + 	rm.meanAbsoluteError)
     println("R Squared: " + rm.r2)                          // 0.9418762043860976
     println("Explained Variance: " + rm.explainedVariance + "\n") //1391.913765231291
-
-    // First Run
-    // println("sqrt(MSE): " + Math.sqrt(rm.meanSquaredError)) // 9.27208480408947
-    // println("mean absolute error: " + 	rm.meanAbsoluteError)
-    // println("R Squared: " + rm.r2)                          // 0.9418762043860976
-    // println("Explained Variance: " + rm.explainedVariance + "\n") //1391.913765231291
-
-    // Second Run
-    // println("sqrt(MSE): " + Math.sqrt(rm.meanSquaredError)) // 9.85055218341565
-    // println("mean absolute error: " + 	rm.meanAbsoluteError) // 6.891695864162034
-    // println("R Squared: " + rm.r2)                          // 0.934662584301822
-    // println("Explained Variance: " + rm.explainedVariance + "\n") // 1386.6828761967377
-
-
-    //Third Run
-    // println("sqrt(MSE): " + Math.sqrt(rm.meanSquaredError)) // 9.858289809687346
-    // println("mean absolute error: " + 	rm.meanAbsoluteError) // 6.930385044621098
-    // println("R Squared: " + rm.r2)                          // 0.9343839060145654
-    // println("Explained Variance: " + rm.explainedVariance + "\n") // 1383.7301688723805
-
 
     sc.stop()
 
