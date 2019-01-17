@@ -5,7 +5,7 @@ import org.apache.spark.sql.SQLContext
 import org.apache.spark.ml.feature.{StringIndexer, VectorAssembler, OneHotEncoder}
 import org.apache.spark.ml.tuning.{ParamGridBuilder, TrainValidationSplit}
 import org.apache.spark.ml.evaluation.{RegressionEvaluator}
-import org.apache.spark.ml.regression.{LinearRegression, RandomForestRegressor}
+import org.apache.spark.ml.regression.{LinearRegression, RandomForestRegressor, GBTRegressionModel, GBTRegressor}
 import org.apache.spark.ml.Pipeline
 import org.apache.spark.mllib.evaluation.RegressionMetrics
 import org.apache.spark.sql.functions.col
@@ -24,10 +24,12 @@ object Flight {
 
     var mlTechnique: Int = 0
 
-    while(mlTechnique != 1 && mlTechnique != 2){
+    while(mlTechnique != 1 && mlTechnique != 2 && mlTechnique != 3){
+      print("\n")
       print("Which machine learning technique do you want to use? \n")
       print("[1] Linear Regression \n")
       print("[2] Random Forest Trees \n")
+      print("[3] Gradient-Boosted Trees \n")
       mlTechnique = readInt()
     }
 
@@ -37,7 +39,7 @@ object Flight {
     val sc = new SparkContext(conf)
     val sqlContext = new SQLContext(sc)
 
-        val rawData = sqlContext.read.format("com.databricks.spark.csv")
+    val rawData = sqlContext.read.format("com.databricks.spark.csv")
                 .option("header", "true")
                 .option("inferSchema", "true")
                 .load(dataPath)
@@ -60,38 +62,31 @@ object Flight {
                 .drop("LateAircraftDelay") // Forbidden
                 .drop("DepDelay") // Casted to double in a new variable called DepDelayDouble
                 .drop("TaxiOut") // Casted to double in a new variable called TaxiOutDouble
-
-    // remove cancelled flights
-    val data3 = data2.filter("DelayOutputVar is not null")
-
-    // Remove correlated variables
-    val data4 = data3
-                .drop("UniqueCarrier") // Always the same value
+                .drop("UniqueCarrier") // Always the same value // Remove correlated variables
                 .drop("CancellationCode") // Cancelled flights don't count
                 .drop("DepTime") // Highly correlated to CRSDeptime
                 .drop("CRSArrTime") // Highly correlated to CRSDeptime
                 .drop("CRSElapsedTime") // Highly correlated to Distance
-
-    // Remove uncorrelated variables to the lable arrDelay
-    val data = data4
-                .drop("Distance")
+                .drop("Distance") // Remove uncorrelated variables to the arrDelay
                 .drop("FlightNum")
                 .drop("CRSDepTime")
                 .drop("Year")
                 .drop("Month")
                 .drop("DayofMonth")
                 .drop("DayOfWeek")
+
+    // remove cancelled flights
+    val data = data2.filter("DelayOutputVar is not null")
+                
     
-    val categoricalVariables = Array("TailNum", "Origin", "Dest")
-    val categoricalIndexers = categoricalVariables
-      .map(i => new StringIndexer().setInputCol(i).setOutputCol(i+"Index").setHandleInvalid("skip"))
-    val categoricalEncoders = categoricalVariables
-      .map(e => new OneHotEncoder().setInputCol(e + "Index").setOutputCol(e + "Vec").setDropLast(false))
+    //val categoricalVariables = Array("TailNum", "Origin", "Dest")
+    //val categoricalIndexers = categoricalVariables.map(i => new StringIndexer().setInputCol(i).setOutputCol(i+"Index").setHandleInvalid("skip"))
+    //val categoricalEncoders = categoricalVariables.map(e => new OneHotEncoder().setInputCol(e + "Index").setOutputCol(e + "Vec").setDropLast(false))
 
     // assemble all of our features into one vector which we will call "features". 
     // This will house all variables that will be input into our model.
     val assembler = new VectorAssembler()
-                    .setInputCols(Array("TailNumVec", "OriginVec", "DestVec", "DepDelayDouble", "TaxiOutDouble"))
+                    .setInputCols(Array("DepDelayDouble", "TaxiOutDouble"))
                     .setOutputCol("features")
                     .setHandleInvalid("skip")
 
@@ -105,7 +100,8 @@ object Flight {
           .addGrid(lr.fitIntercept)
           .addGrid(lr.elasticNetParam, Array(0.0, 1.0))
           .build()
-        val steps:Array[org.apache.spark.ml.PipelineStage] = categoricalIndexers ++ categoricalEncoders ++ Array(assembler, lr)
+        //val steps:Array[org.apache.spark.ml.PipelineStage] = categoricalIndexers ++ categoricalEncoders ++ Array(assembler, lr)
+        val steps:Array[org.apache.spark.ml.PipelineStage] = Array(assembler, lr)
 
         val pipeline = new Pipeline().setStages(steps)
 
@@ -130,14 +126,51 @@ object Flight {
         println("R Squared: " + rm.r2)                         
         println("Explained Variance: " + rm.explainedVariance + "\n")
 
-      case _ =>
+      case 2 =>
         val rf = new RandomForestRegressor()
+          .setNumTrees(50)
+          .setMaxDepth(15)
           .setLabelCol("DelayOutputVar")
           .setFeaturesCol("features")
 
         val paramGrid = new ParamGridBuilder().build()
 
-        val steps:Array[org.apache.spark.ml.PipelineStage] = categoricalIndexers ++ categoricalEncoders ++ Array(assembler, rf)
+        //val steps:Array[org.apache.spark.ml.PipelineStage] = categoricalIndexers ++ categoricalEncoders ++ Array(assembler, rf)
+        val steps:Array[org.apache.spark.ml.PipelineStage] = Array(assembler, rf)
+
+        val pipeline = new Pipeline().setStages(steps)
+
+        val tvs = new TrainValidationSplit()
+          .setEstimator(pipeline) // the estimator can also just be an individual model rather than a pipeline
+          .setEvaluator(new RegressionEvaluator().setLabelCol("DelayOutputVar"))
+          .setEstimatorParamMaps(paramGrid)
+          .setTrainRatio(0.7)
+
+        val Array(training, test) = data.randomSplit(Array(0.70, 0.30), seed = 12345)
+
+        val model = tvs.fit(training)
+
+        val holdout = model.transform(test).select("prediction", "DelayOutputVar")
+
+        // have to do a type conversion for RegressionMetrics
+        val rm = new RegressionMetrics(holdout.rdd.map(x =>
+          (x(0).asInstanceOf[Double], x(1).asInstanceOf[Double])))
+
+        println("sqrt(MSE): " + Math.sqrt(rm.meanSquaredError))
+        println("mean absolute error: " + 	rm.meanAbsoluteError)
+        println("R Squared: " + rm.r2)                         
+        println("Explained Variance: " + rm.explainedVariance + "\n")
+      
+      case _ =>
+        val gbt = new GBTRegressor()
+          .setLabelCol("DelayOutputVar")
+          .setFeaturesCol("features")
+          .setMaxIter(10)
+
+        val paramGrid = new ParamGridBuilder().build()
+
+        //val steps:Array[org.apache.spark.ml.PipelineStage] = categoricalIndexers ++ categoricalEncoders ++ Array(assembler, rf)
+        val steps:Array[org.apache.spark.ml.PipelineStage] = Array(assembler, gbt)
 
         val pipeline = new Pipeline().setStages(steps)
 
@@ -182,6 +215,25 @@ object Flight {
     // println("mean absolute error: " + 	rm.meanAbsoluteError) // 6.930385044621098
     // println("R Squared: " + rm.r2)                          // 0.9343839060145654
     // println("Explained Variance: " + rm.explainedVariance + "\n") // 1383.7301688723805
+
+
+    // Random Forest with numTress=3 and depth=4
+    // sqrt(MSE): 19.146152143133534
+    // mean absolute error: 10.201299302807106
+    // R Squared: 0.7525103195695625
+    // Explained Variance: 1029.9235548446513
+
+    // Random Forest with numTress=10 and depth=10
+    // sqrt(MSE): 18.354454337931042
+    // mean absolute error: 9.395005755067366
+    // R Squared: 0.772554662114239
+    // Explained Variance: 1106.8968864726519
+
+    // Random Forest with numTress=50 and depth=15
+    // sqrt(MSE): 18.433252813401392
+    // mean absolute error: 9.40955686165754
+    // R Squared: 0.7705975548931269
+    // Explained Variance: 1068.258438445279
 
 
     sc.stop()
