@@ -18,7 +18,8 @@ object Flight {
   def main(args: Array[String]) {
     print("\n")
     print("UPM Big Data Spark project by\n")
-    print("Carolina Neves\nPedro Costa\n\n")
+    print("Carolina Neves\nPedro Costa\n")
+    print("{carolina.mneves,p.duarte}@alumnos.upm.es\n\n")
     print("Where is your dataset located? (provide full path on disk) \n")
 
     val dataPath = readLine()
@@ -35,7 +36,7 @@ object Flight {
     }
 
     print("\n")
-    print("Use categorical features? (better accuracy but it will take longer!) \n")
+    print("Use categorical features? (yes/no) \n")
     val useCategorical = readBoolean()
 
     //val dataPath = "/home/proton/Documents/UPM-BigData-Spark/flightdelaypredictor/data/2008.csv"
@@ -165,10 +166,6 @@ object Flight {
           .setLabelCol("DelayOutputVar")
           .setFeaturesCol("features")
 
-        val paramGrid = new ParamGridBuilder()
-            .addGrid(rf.numTrees, Array(1, 40))
-            .addGrid(rf.maxDepth, Array(1, 15))
-            .build()
 
         val steps:Array[org.apache.spark.ml.PipelineStage] = if(useCategorical){
                                                                 categoricalIndexers ++ categoricalEncoders ++ Array(assembler, rf)
@@ -178,15 +175,9 @@ object Flight {
 
         val pipeline = new Pipeline().setStages(steps)
 
-        val tvs = new TrainValidationSplit()
-          .setEstimator(pipeline) // the estimator can also just be an individual model rather than a pipeline
-          .setEvaluator(new RegressionEvaluator().setLabelCol("DelayOutputVar"))
-          .setEstimatorParamMaps(paramGrid)
-          .setTrainRatio(0.7)
-
         val Array(training, test) = data.randomSplit(Array(0.70, 0.30), seed = 12345)
 
-        val model = tvs.fit(training)
+        val model = pipeline.fit(training)
 
         val holdout = model.transform(test).select("prediction", "DelayOutputVar")
 
@@ -205,12 +196,6 @@ object Flight {
           .setFeaturesCol("features")
           .setMaxIter(10)
 
-        val paramGrid = new ParamGridBuilder()
-              .addGrid(gbt.stepSize, Array(0.1, 1))
-              .addGrid(gbt.maxDepth, Array(1, 10))
-              .addGrid(gbt.maxBins, Array(8, 128))
-              .build()
-
         val steps:Array[org.apache.spark.ml.PipelineStage] = if(useCategorical){
                                                                 categoricalIndexers ++ categoricalEncoders ++ Array(assembler, gbt)
                                                               }else{
@@ -219,15 +204,10 @@ object Flight {
 
         val pipeline = new Pipeline().setStages(steps)
 
-        val tvs = new TrainValidationSplit()
-          .setEstimator(pipeline) // the estimator can also just be an individual model rather than a pipeline
-          .setEvaluator(new RegressionEvaluator().setLabelCol("DelayOutputVar"))
-          .setEstimatorParamMaps(paramGrid)
-          .setTrainRatio(0.7)
 
         val Array(training, test) = data.randomSplit(Array(0.70, 0.30), seed = 12345)
 
-        val model = tvs.fit(training)
+        val model = pipeline.fit(training)
 
         val holdout = model.transform(test).select("prediction", "DelayOutputVar")
 
