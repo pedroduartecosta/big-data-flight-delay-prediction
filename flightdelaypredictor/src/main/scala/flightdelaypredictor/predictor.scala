@@ -16,6 +16,7 @@ import scala.io._
 object Flight {
 
   def main(args: Array[String]) {
+    print("\n")
     print("UPM Big Data Spark project by\n")
     print("Carolina Neves\nPedro Costa\n\n")
     print("Where is your dataset located? (provide full path on disk) \n")
@@ -32,6 +33,10 @@ object Flight {
       print("[3] Gradient-Boosted Trees \n")
       mlTechnique = readInt()
     }
+
+    print("\n")
+    print("Use categorical features? (better accuracy but it will take longer!) \n")
+    val useCategorical = readBoolean()
 
     //val dataPath = "/home/proton/Documents/UPM-BigData-Spark/flightdelaypredictor/data/2008.csv"
     
@@ -68,30 +73,53 @@ object Flight {
                 .drop("CRSArrTime") // Highly correlated to CRSDeptime
                 .drop("CRSElapsedTime") // Highly correlated to Distance
                 .drop("Distance") // Remove uncorrelated variables to the arrDelay
-                .drop("FlightNum")
-                .drop("CRSDepTime")
-                .drop("Year")
-                .drop("Month")
-                .drop("DayofMonth")
-                .drop("DayOfWeek")
+                .drop("FlightNum") // Remove uncorrelated variables to the arrDelay
+                .drop("CRSDepTime") // Remove uncorrelated variables to the arrDelay
+                .drop("Year") // Remove uncorrelated variables to the arrDelay
+                .drop("Month") // Remove uncorrelated variables to the arrDelay
+                .drop("DayofMonth") // Remove uncorrelated variables to the arrDelay
+                .drop("DayOfWeek") // Remove uncorrelated variables to the arrDelay
+                .drop("TailNum")
 
     // remove cancelled flights
     val data = data2.filter("DelayOutputVar is not null")
                 
-    
-    //val categoricalVariables = Array("TailNum", "Origin", "Dest")
-    //val categoricalIndexers = categoricalVariables.map(i => new StringIndexer().setInputCol(i).setOutputCol(i+"Index").setHandleInvalid("skip"))
-    //val categoricalEncoders = categoricalVariables.map(e => new OneHotEncoder().setInputCol(e + "Index").setOutputCol(e + "Vec").setDropLast(false))
-
     // assemble all of our features into one vector which we will call "features". 
     // This will house all variables that will be input into our model.
-    val assembler = new VectorAssembler()
-                    .setInputCols(Array("DepDelayDouble", "TaxiOutDouble"))
-                    .setOutputCol("features")
-                    .setHandleInvalid("skip")
+    val assembler = if(useCategorical){
+      new VectorAssembler()
+        .setInputCols(Array("OriginVec", "DestVec", "DepDelayDouble", "TaxiOutDouble"))
+        .setOutputCol("features")
+        .setHandleInvalid("skip")
+    }else{
+      new VectorAssembler()
+        .setInputCols(Array("DepDelayDouble", "TaxiOutDouble"))
+        .setOutputCol("features")
+        .setHandleInvalid("skip")
+      
+    }
+
+    val categoricalVariables = if(useCategorical){
+                                Array("Origin", "Dest")
+                              }else{
+                                null
+                              }
+   
+    val categoricalIndexers = if(useCategorical){
+                                categoricalVariables.map(i => new StringIndexer().setInputCol(i).setOutputCol(i+"Index").setHandleInvalid("skip"))
+                              }else{
+                                null
+                              }
+    val categoricalEncoders = if(useCategorical){
+                                categoricalVariables.map(e => new OneHotEncoder().setInputCol(e + "Index").setOutputCol(e + "Vec").setDropLast(false))
+                              }else{
+                                null
+                              }
+    
+    
 
     mlTechnique match {
-      case 0 => 
+      case 1 => 
         val lr = new LinearRegression()
           .setLabelCol("DelayOutputVar")
           .setFeaturesCol("features")
@@ -100,8 +128,12 @@ object Flight {
           .addGrid(lr.fitIntercept)
           .addGrid(lr.elasticNetParam, Array(0.0, 1.0))
           .build()
-        //val steps:Array[org.apache.spark.ml.PipelineStage] = categoricalIndexers ++ categoricalEncoders ++ Array(assembler, lr)
-        val steps:Array[org.apache.spark.ml.PipelineStage] = Array(assembler, lr)
+
+        val steps:Array[org.apache.spark.ml.PipelineStage] = if(useCategorical){
+                                                                categoricalIndexers ++ categoricalEncoders ++ Array(assembler, lr)
+                                                              }else{
+                                                                Array(assembler, lr)
+                                                              }
 
         val pipeline = new Pipeline().setStages(steps)
 
@@ -128,15 +160,21 @@ object Flight {
 
       case 2 =>
         val rf = new RandomForestRegressor()
-          .setNumTrees(50)
-          .setMaxDepth(15)
+          .setNumTrees(10)
+          .setMaxDepth(10)
           .setLabelCol("DelayOutputVar")
           .setFeaturesCol("features")
 
-        val paramGrid = new ParamGridBuilder().build()
+        val paramGrid = new ParamGridBuilder()
+            .addGrid(rf.numTrees, Array(1, 40))
+            .addGrid(rf.maxDepth, Array(1, 15))
+            .build()
 
-        //val steps:Array[org.apache.spark.ml.PipelineStage] = categoricalIndexers ++ categoricalEncoders ++ Array(assembler, rf)
-        val steps:Array[org.apache.spark.ml.PipelineStage] = Array(assembler, rf)
+        val steps:Array[org.apache.spark.ml.PipelineStage] = if(useCategorical){
+                                                                categoricalIndexers ++ categoricalEncoders ++ Array(assembler, rf)
+                                                              }else{
+                                                                Array(assembler, rf)
+                                                              }
 
         val pipeline = new Pipeline().setStages(steps)
 
@@ -167,10 +205,17 @@ object Flight {
           .setFeaturesCol("features")
           .setMaxIter(10)
 
-        val paramGrid = new ParamGridBuilder().build()
+        val paramGrid = new ParamGridBuilder()
+              .addGrid(gbt.stepSize, Array(0.1, 1))
+              .addGrid(gbt.maxDepth, Array(1, 10))
+              .addGrid(gbt.maxBins, Array(8, 128))
+              .build()
 
-        //val steps:Array[org.apache.spark.ml.PipelineStage] = categoricalIndexers ++ categoricalEncoders ++ Array(assembler, rf)
-        val steps:Array[org.apache.spark.ml.PipelineStage] = Array(assembler, gbt)
+        val steps:Array[org.apache.spark.ml.PipelineStage] = if(useCategorical){
+                                                                categoricalIndexers ++ categoricalEncoders ++ Array(assembler, gbt)
+                                                              }else{
+                                                                Array(assembler, gbt)
+                                                              }
 
         val pipeline = new Pipeline().setStages(steps)
 
@@ -197,43 +242,73 @@ object Flight {
 
     }
 
-    // First Run
+    // Linaer Regression - All but forbidden features
     // println("sqrt(MSE): " + Math.sqrt(rm.meanSquaredError)) // 9.796740796107883
     // println("mean absolute error: " + 	rm.meanAbsoluteError) // 6.887088798296243
     // println("R Squared: " + rm.r2)                          // 0.9350795166082608
     // println("Explained Variance: " + rm.explainedVariance + "\n") // 1382.225087766879
 
-    // Second Run
+    // Linaer Regression - All but forbidden features and feaures which are highly correleted
     // println("sqrt(MSE): " + Math.sqrt(rm.meanSquaredError)) // 9.85055218341565
     // println("mean absolute error: " + 	rm.meanAbsoluteError) // 6.891695864162034
     // println("R Squared: " + rm.r2)                          // 0.934662584301822
     // println("Explained Variance: " + rm.explainedVariance + "\n") // 1386.6828761967377
 
 
-    //Third Run
+    // Linaer Regression - All but forbidden features and feaures which are highly correleted and feaures which are highly correleted to ArrDelay (but including categorical features)
     // println("sqrt(MSE): " + Math.sqrt(rm.meanSquaredError)) // 9.858289809687346
     // println("mean absolute error: " + 	rm.meanAbsoluteError) // 6.930385044621098
     // println("R Squared: " + rm.r2)                          // 0.9343839060145654
     // println("Explained Variance: " + rm.explainedVariance + "\n") // 1383.7301688723805
 
+    // Linear Regression - Only with "DepDelayDouble", "TaxiOutDouble"
+    // sqrt(MSE): 10.878899669612952
+    // mean absolute error: 7.783394230068079
+    // R Squared: 0.9200968268506162
+    // Explained Variance: 1362.3369912919457
 
-    // Random Forest with numTress=3 and depth=4
+    // Linear Regression - Only with "OriginVec", "DestVec", "DepDelayDouble", "TaxiOutDouble"
+    // sqrt(MSE): 9.961831227944037
+    // mean absolute error: 7.02540163549372
+    // R Squared: 0.9330003640476157
+    // Explained Variance: 1381.39053839548
+
+    // Random Forest with numTress=3 and depth=4 - Only with "DepDelayDouble", "TaxiOutDouble"
     // sqrt(MSE): 19.146152143133534
     // mean absolute error: 10.201299302807106
     // R Squared: 0.7525103195695625
     // Explained Variance: 1029.9235548446513
 
-    // Random Forest with numTress=10 and depth=10
+    // Random Forest with numTress=10 and depth=10 - Only with "DepDelayDouble", "TaxiOutDouble"
     // sqrt(MSE): 18.354454337931042
     // mean absolute error: 9.395005755067366
     // R Squared: 0.772554662114239
     // Explained Variance: 1106.8968864726519
 
-    // Random Forest with numTress=50 and depth=15
+    // Random Forest with numTress=50 and depth=15 - Only with "DepDelayDouble", "TaxiOutDouble"
     // sqrt(MSE): 18.433252813401392
     // mean absolute error: 9.40955686165754
     // R Squared: 0.7705975548931269
     // Explained Variance: 1068.258438445279
+
+    // Random Forest with numTress=10 and depth=10 - Only with "OriginVec", "DestVec", "DepDelayDouble", "TaxiOutDouble"
+    // sqrt(MSE): 18.266729012017432
+    // mean absolute error: 9.602345117676546
+    // R Squared: 0.7747236216385236
+    // Explained Variance: 1077.442442272066
+
+
+    // Gradient-Boosted Trees with maxIter=10 - Only with "DepDelayDouble", "TaxiOutDouble"
+    // sqrt(MSE): 17.98327804019669
+    // mean absolute error: 9.33902838221064
+    // R Squared: 0.7816607563685062
+    // Explained Variance: 1170.153933584219
+
+    // Gradient-Boosted Trees with maxIter=10 - Only with "OriginVec", "DestVec", "DepDelayDouble", "TaxiOutDouble"
+    // sqrt(MSE): 17.80732797194016
+    // mean absolute error: 9.213998551801323
+    // R Squared: 0.7859123580993281
+    // Explained Variance: 1174.7455190081098
 
 
     sc.stop()

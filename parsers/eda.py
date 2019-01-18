@@ -26,7 +26,7 @@ def matrixCorr(df):
 	pyplot.show()
 
 def scatterPlot(df):
-	sns.regplot(x=df["ArrDelay"], y=df["CRSArrTime"])
+	sns.regplot(x=df["ArrDelay"], y=df["Distance"])
 	pyplot.show()
 
 #------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------#
