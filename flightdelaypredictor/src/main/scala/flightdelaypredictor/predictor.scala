@@ -41,7 +41,7 @@ object Flight {
 
     //val dataPath = "/home/proton/Documents/UPM-BigData-Spark/flightdelaypredictor/data/2008.csv"
     
-    val conf = new SparkConf().setAppName("predictor").setMaster("local")
+    val conf = new SparkConf().setAppName("predictor")
     val sc = new SparkContext(conf)
     val sqlContext = new SQLContext(sc)
 
