@@ -1,6 +1,15 @@
 # UPM-BigData-Spark
 Spark application that creates a machine learning model for a real-world problem, using real-world data: Predicting the arrival delay of commercial flights
 
+# Medium Posts
+- [Setting up a Spark machine learning project with Scala, sbt and MLlib](https://medium.com/@pedrodc/setting-up-a-spark-machine-learning-project-with-scala-sbt-and-mllib-831c329907ea)
+- [Building a Big Data Machine Learning Spark Application for Flight Delay Prediction](https://medium.com/@pedrodc/building-a-big-data-machine-learning-spark-application-for-flight-delay-prediction-4f9507cdb010)
+
+# Machine Learning Models
+- Linear Regression
+- Random Forest Trees
+- Gradient-Boosted Trees
+
 # How to run
 
 ## Install dependencies
